@@ -1195,7 +1195,8 @@ class GroqProvider(_RetryHelpers):
         deadline_seconds: float = 90.0,
         deadline_at: float | None = None,
     ) -> str:
-        cache_key = f"groq:{self.model}:{re.sub(r'\s+', ' ', prompt or '').strip().lower()}|{difficulty or ''}|{game_style or ''}"
+        normalized_prompt = re.sub(r"\s+", " ", prompt or "").strip().lower()
+        cache_key = f"groq:{self.model}:{normalized_prompt}|{difficulty or ''}|{game_style or ''}"
         if not bypass_cache:
             cached = self._lookup_cache(cache_key)
             if cached is not None:
