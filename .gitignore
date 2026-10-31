@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# Build output
+/dist/
+/build/
+/frontend/dist/
+/frontend/build/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local databases and SQLite sidecars
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-*
+*.sqlite3-*
+*.db-*
+
+# Temporary and generated files
+*.tmp
+*.temp
+*.bak
+*.log
