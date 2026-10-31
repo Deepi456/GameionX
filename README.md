@@ -1,194 +1,337 @@
 # GameionX
 
-GameionX is a spec-first prototype for generating playable browser games from
-natural-language prompts. The backend supports an offline development mock,
-Gemini, and Groq-backed `GameDesignerAgent`. The mock is deliberately **not
-LLM-powered**; it is useful for local testing without an API key.
+**AI-Powered Prompt-to-Playable Game Generation Platform Using Agentic AI**
 
-## Prerequisites
+GameionX is a web application that turns a natural-language game prompt into a
+validated game specification and a playable browser preview. It combines a
+React and Phaser frontend with a FastAPI backend, a provider-backed game design
+step, deterministic Python workflow components, structural validation, and
+bounded browser playtesting.
 
-- Windows PowerShell
+The project is a capstone prototype. Its development mock is deterministic and
+does not use an AI model. Gemini and Groq adapters are implemented, but real
+provider availability and successful live generation depend on external
+credentials, model access, and service availability; this repository does not
+claim that a live provider request has been verified.
+
+## Problem statement
+
+Creating a small playable game typically requires translating an idea into
+mechanics, a structured game design, runtime configuration, and working
+frontend behavior. These steps can be time-consuming for beginners and
+difficult to validate consistently.
+
+GameionX explores how a prompt-driven workflow can make this process more
+accessible while keeping generated content constrained to validated data
+rather than executing model-generated source code.
+
+## Objectives
+
+- Accept a natural-language game prompt through a web interface.
+- Convert the prompt into a typed, validated `GameSpec`.
+- Translate the specification into configuration for a controlled Phaser
+  runtime.
+- Check structural consistency and, when the browser test environment is
+  available, observe selected gameplay behaviors.
+- Preserve generated projects in SQLite and scope project operations to the
+  authenticated owner.
+- Report incomplete or failed validation honestly instead of treating it as a
+  successful game.
+
+## Proposed solution
+
+The backend plans prompt requirements, obtains a game design from the selected
+provider, validates the design, constructs runtime and scene configuration,
+and runs QA. Browser checks use Playwright with installed Google Chrome and
+the existing frontend preview. A small, allowlisted repair may be attempted
+once for supported diagnosed problems; output is validated and tested again.
+The frontend renders the resulting data in a controlled Phaser preview.
+
+The workflow is implemented in Python and is orchestrated by
+`GameOrchestrator`. It does **not** use LangGraph: there is no LangGraph
+dependency or LangGraph runtime in the project.
+
+## Key features
+
+### Implemented
+
+- React-based application with prompt entry, game library, template gallery,
+  agent information, settings, and a Phaser game preview.
+- Backend `GameSpec` validation using Pydantic.
+- Development-mock, Gemini, and Groq provider adapters. The development mock
+  is not an LLM; provider selection does not silently convert a failed real
+  provider request into mock output.
+- Structured generation requests, bounded provider retries, configured
+  fallback handling, and an end-to-end provider deadline.
+- Controlled Phaser runtime configuration for supported genres and mechanics.
+- Structural QA and bounded Playwright/Chrome playtests. QA distinguishes
+  failures from checks that could not be completed.
+- Authentication, session cookies, SQLite persistence, and
+  owner-scoped saved-game/project operations.
+- Unit and integration-oriented backend and frontend test suites.
+
+### Partial, demo-only, or not implemented
+
+- The Templates gallery uses local static template data; it is not backed by a
+  template service.
+- The Agents page presents informational cards. The backend workflow
+  components are implemented, but those cards are not a live orchestration
+  monitor.
+- The Game Time Machine displays placeholder timeline entries; restore and
+  version comparison are not implemented.
+- Community cards use demo data and their preview controls are disabled.
+  There is no community publishing or sharing API.
+- Analytics includes counts derived from the signed-in user's saved games, but
+  the performance chart is demo-style derived data, not backend generation
+  telemetry.
+- Reference-file upload controls are marked as coming soon and are disabled.
+- Provider adapters and offline tests do not establish that a live Gemini or
+  Groq request will succeed for a particular account or model.
+
+## System architecture
+
+```mermaid
+flowchart LR
+    U[User] --> FE[React and Phaser frontend]
+    FE -->|HTTP and session cookie| API[FastAPI API]
+    API --> AUTH[Authentication and project APIs]
+    AUTH --> DB[(SQLite)]
+    API --> ORCH[GameOrchestrator]
+    ORCH --> PLAN[GamePlannerAgent]
+    ORCH --> DESIGN[GameDesignerAgent]
+    DESIGN --> PROVIDER[Development mock, Gemini, or Groq]
+    ORCH --> BUILD[GameBuilderAgent]
+    ORCH --> SCENE[GameSceneBuilderAgent]
+    ORCH --> QA[GameQAAgent]
+    ORCH --> PLAY[BrowserPlaytestRunner]
+    PLAY --> CHROME[Playwright and Google Chrome]
+    ORCH --> REPAIR[GameRepairAgent, bounded]
+    ORCH -->|validated game and workflow result| API
+    API --> FE
+```
+
+The backend exposes FastAPI's interactive OpenAPI documentation. SQLite is
+initialized by the backend on startup. The frontend calls the backend API and
+renders the validated runtime data; it does not execute generated game code.
+
+## Agent and workflow responsibilities
+
+| Component | Responsibility |
+|---|---|
+| `GamePlannerAgent` | Deterministically extracts supported genre, entity, mechanic, and UI requirements from the prompt. |
+| `GameDesignerAgent` | Requests structured design output from the configured provider, validates it as a `GameSpec`, and performs a bounded retry for invalid output. |
+| `GameBuilderAgent` | Validates and translates `GameSpec` into controlled Phaser runtime configuration. |
+| `GameSceneBuilderAgent` | Produces declarative UI and instruction configuration from runtime capabilities. |
+| `GameQAAgent` | Runs deterministic structural checks and combines them with browser-playtest results. |
+| `BrowserPlaytestRunner` | Uses Playwright and Google Chrome for bounded, observable checks against the existing frontend preview. |
+| `GameRepairAgent` | Applies only supported deterministic repairs, limited by the orchestrator to at most one attempt, then the result is revalidated and retested. |
+| `GameOrchestrator` | Runs the workflow in order, records stage and requirement outcomes, and determines whether the result is ready, unverified, or failed. |
+
+This is a coordinated Python workflow, not an autonomous LangGraph graph.
+Structural validity alone does not mean browser gameplay was verified.
+
+## Technology stack
+
+| Area | Technologies |
+|---|---|
+| Frontend | React, Vite, JavaScript, CSS |
+| Browser game runtime | Phaser 3 |
+| Backend API | Python, FastAPI, Uvicorn |
+| Data validation | Pydantic |
+| Persistence | SQLite |
+| Provider integrations | Google GenAI SDK for Gemini; HTTPX for the Groq-compatible API |
+| Browser testing | Playwright with Google Chrome |
+| Tests and lint | pytest, Node.js test runner, Oxlint |
+
+## Repository structure
+
+```text
+gameionx/
+├── backend/
+│   ├── app/
+│   │   ├── agents/              # Planner, designer, builder, QA, repair, orchestration
+│   │   ├── auth.py              # Password hashing and session handling
+│   │   ├── database.py          # SQLite initialization and connection helpers
+│   │   ├── main.py              # FastAPI app and API routes
+│   │   ├── models.py            # Request, response, GameSpec, and workflow schemas
+│   │   ├── playtest.py          # Playwright/Chrome gameplay checks
+│   │   └── provider.py          # Development mock, Gemini, and Groq providers
+│   ├── tests/                   # Backend API, agent, model, and playtest tests
+│   ├── .env.example             # Safe environment configuration template
+│   ├── pytest.ini
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── components/          # Phaser preview and rendering helpers
+│   │   ├── gameRuntime/         # Runtime adapter and game mechanics
+│   │   ├── lib/                 # API and platform data helpers
+│   │   ├── App.jsx
+│   │   └── ...
+│   ├── tests/                   # Node.js frontend tests
+│   ├── .env.example
+│   └── package.json
+├── .gitignore
+└── README.md
+```
+
+## Requirements
+
+- Python 3.11 or newer and `pip`
 - Node.js and npm
-- Python 3.11+
-- Google Chrome (used by the headless Playwright browser playtest)
+- Google Chrome installed for browser playtests (the runner launches Chrome's
+  `chrome` channel)
+- Gemini or Groq credentials only if using those real providers
 
-## Start the backend
+The development mock can be used without provider credentials. It is intended
+for development and testing, not as evidence of live AI generation.
 
-From the repository root:
+## Installation and local development
 
-```powershell
-Set-Location .\backend
-& 'C:\Projects\intelligent-document-processing\.venv\Scripts\python.exe' -m pip install -r requirements.txt
-Copy-Item .env.example .env
-# Keep the default for offline development:
-# GAMEIONX_PROVIDER=development-mock
-& 'C:\Projects\intelligent-document-processing\.venv\Scripts\python.exe' -m uvicorn app.main:app --reload --port 8000
-```
+### 1. Set up the backend
 
-To use Gemini, edit `backend\.env` before starting the server:
-
-```text
-GAMEIONX_PROVIDER=gemini
-GEMINI_API_KEY=your-backend-only-key
-GEMINI_MODEL=gemini-3.8-flash
-```
-
-When Gemini is selected, a missing key or Gemini/model error is reported; the
-server never silently falls back to the development mock.
-
-To use Groq, edit `backend\.env` before starting the server:
-
-```text
-GAMEIONX_PROVIDER=groq
-GROQ_API_KEY=your-backend-only-key
-GROQ_MODEL=openai/gpt-oss-20b
-```
-
-Groq is called through its OpenAI-compatible chat completions endpoint with
-strict JSON-schema output for `GameSpec`. If the selected model or account
-does not support the requested structured output, the backend reports the
-provider error and never falls back to fake or mock data.
-
-The configured account was verified to list and generate structured JSON with
-`gemini-3.8-flash`. `gemini-2.5-flash` was listed by the catalog but returned
-HTTP 404 for generation, so it is not the active model.
-
-Use the Python executable for your own Python 3.11 virtual environment if it
-is in a different location. The API is available at
-`http://localhost:8000`; interactive docs are at `/docs`.
-
-## Start the frontend
-
-In a second PowerShell window from the repository root:
+In PowerShell:
 
 ```powershell
-Set-Location .\frontend
+Set-Location C:\Projects\gameionx\backend
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+```
+
+On macOS or Linux, from the repository root:
+
+```sh
+cd backend
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+test -f .env || cp .env.example .env
+```
+
+The example configuration selects `development-mock` by default. Keep provider
+credentials in the ignored `backend/.env`; never place them in frontend
+configuration or commit them. To use a real provider, select `gemini` or
+`groq` with `GAMEIONX_PROVIDER` and configure the corresponding backend
+credential and any desired model settings. Model access and provider
+availability are account- and service-dependent.
+
+Start the backend from `backend/` with the virtual environment active:
+
+```sh
+python -m uvicorn app.main:app --reload --port 8000
+```
+
+The backend initializes the SQLite database on startup. By default it is
+`backend/gameionx.sqlite3`; `GAMEIONX_DATABASE_PATH` can select another path.
+The database and environment files are excluded from Git.
+
+### 2. Set up the frontend
+
+Open a second terminal:
+
+```sh
+cd frontend
 npm install
-$env:VITE_API_BASE_URL = 'http://localhost:8000'
 npm run dev
 ```
 
-Open the URL printed by Vite, normally `http://localhost:5173`.
+Vite prints the local frontend URL, normally `http://localhost:5173`. The
+frontend resolves the local API host automatically for `localhost` and
+`127.0.0.1`. To point it to another backend origin, set
+`VITE_API_BASE_URL` before starting Vite, or configure it in an ignored
+frontend environment file.
 
-## Validate locally
+### 3. Open API documentation
 
-```powershell
-Set-Location .\backend
-& 'C:\Projects\intelligent-document-processing\.venv\Scripts\python.exe' -m pytest
+With the backend running, visit:
 
-Set-Location ..\frontend
+- Swagger UI: `http://localhost:8000/docs`
+- OpenAPI JSON: `http://localhost:8000/openapi.json`
+- Health endpoint: `http://localhost:8000/api/health`
+
+The API includes generation (`POST /api/generate`), authentication
+(`/api/auth/*`), saved games (`/api/games`), owner-scoped projects
+(`/api/projects`), and activity (`GET /api/activity`). Protected routes
+require the session cookie established by registration or login.
+
+## Testing and quality checks
+
+Run backend tests from `backend/` with the environment active:
+
+```sh
+python -m pytest -v
+```
+
+Run frontend checks from `frontend/`:
+
+```sh
+npm test
 npm run lint
 npm run build
 ```
 
-The frontend sends prompts to `POST /api/generate`. The response contains the
-validated `GameSpec`, a data-only `runtime_config` produced by
-`GameBuilderAgent`, and a deterministic structural `qa_report` produced by
-`GameQAAgent`, plus a versioned `WorkflowState` recording the original prompt,
-stable requirement IDs, validated agent outputs, mechanic coverage, scene
-configuration, QA findings, and repair history. The ordered workflow uses a
-deterministic planner and builders, with the configured model used for game
-design. `GameSpec` v1 and the existing `GameDefinitionV2` adapter remain
-backward-compatible. The Phaser preview consumes the controlled configuration.
-Playwright tests the existing Phaser preview in Google Chrome for browser
-loading, rendered entities, keyboard movement, and supported top-down
-collectible objectives. Platformer tests use browser keyboard input to navigate
-conservative routes across existing static platforms and verify accepted
-jumps, observed landings, actual collectible progress, and goal completion.
-Layouts without a safely planned route remain NOT TESTED; arbitrary platform
-layouts are not assumed playable. Each test records PASS, FAIL, or NOT TESTED.
-A game is not marked ready unless required browser checks and planned
-requirement coverage pass.
-Collectible coordinates are normalized points; the controlled preview renders
-platform `x`/`y` as the normalized top-left corner and expects collectibles
-horizontally within and just above a platform. Explicit collectible counts in a
-prompt are preserved in the generated collectible arrays and matching targets.
-Platformer browser tests record the platform actually landed on for each planned
-jump. Small and conservative larger gaps plus varied platform heights have
-representative Chrome scenarios; routes outside the conservative jump envelope
-remain NOT TESTED rather than being treated as playable.
-One browser-observed static-platform miss can trigger a single allowlisted
-repair: move the planned destination toward its source by at most 0.08 normalized
-world units, carrying collectibles and a goal anchored to that platform by the
-same offset. The runner records the actual landing and terminal state; no repair
-is attempted when the game ends before a landing can be observed. Every applied
-patch is revalidated and receives one browser retest; an unsuccessful retest
-remains failed.
-It never evaluates generated source code. API keys remain backend-only and are
-never included in frontend code or responses.
+Backend browser playtests require installed Google Chrome. The runner uses
+`GAMEIONX_FRONTEND_URL` to target a frontend server (default
+`http://127.0.0.1:5173`) and starts the local Vite frontend when that server
+is not already available. `PLAYTEST_BUDGET_SECONDS` sets the test time budget.
+If the browser environment is unavailable or a required check cannot complete,
+the report may mark gameplay **NOT TESTED**; that must not be interpreted as a
+pass.
 
-The React application uses a fixed navy/violet workspace shell across the
-dashboard, generation, project library, playground, settings, and profile.
-Generation remains inside that shell. `POST /api/generate` currently returns
-after the full workflow rather than streaming progress; the UI labels the
-request as running, shows actual elapsed time, and displays confirmed stage
-history only after the response. A failed workflow response retains its
-original `detail` and `workflow` fields and may include `partial_result` when
-validated game and runtime data exist, so failed QA and repair history remain
-visible alongside the playable preview without being reported as success.
-Projects are saved only through the authenticated owner-scoped project API.
+## Current implementation status
 
-## Accounts and saved games
+| Area | Status |
+|---|---|
+| Prompt intake, supported `GameSpec` schemas, and runtime adaptation | Implemented |
+| Development-mock generation | Implemented for supported mock mechanics; not model-generated |
+| Gemini/Groq provider adapters, retry handling, and deadline logic | Implemented; live provider success is not guaranteed or claimed |
+| Game planning, design, build, scene configuration, QA, orchestration, and bounded repair | Implemented in Python; not LangGraph |
+| Phaser preview and selected gameplay mechanics | Implemented for registered/supported mechanics |
+| Browser gameplay verification | Implemented for selected checks; each individual run can remain unverified |
+| Registration, login, sessions, SQLite persistence, owner-scoped games/projects | Implemented |
+| Templates and agent information pages | Static frontend content |
+| Community sharing and live community gallery | Demo-only; sharing API not implemented |
+| Analytics | Some counts use the signed-in user's saved projects; performance chart is demo-style, not backend telemetry |
+| Game Time Machine version comparison and restore | Placeholder UI; not implemented |
+| Reference upload | Disabled/coming soon |
+| LangGraph orchestration | Not implemented |
 
-The backend uses its existing SQLite data layer and creates or upgrades the
-database at startup. The default persistent database is
-`backend\gameionx.sqlite3` (ignored by Git); set `GAMEIONX_DATABASE_PATH` to
-choose another location. Existing username accounts and saved games are
-preserved when the email/session/project schema is added.
+“Implemented” describes code paths in this repository; it is not a claim of
+production readiness or live external-service availability.
 
-Register or sign in with a normalized email address from the landing page.
-Passwords are stored as salted scrypt hashes and are never returned by the API.
-Sessions use random, opaque HttpOnly, SameSite=Lax cookies; only a keyed hash
-of each session token is stored in SQLite, and sessions expire after seven
-days. Local development uses a development-only session secret. Before
-deployment, set `GAMEIONX_ENV=production` and configure
-`GAMEIONX_SESSION_SECRET` to a random value of at least 32 bytes; production
-startup fails if that secret is missing or too short. Secure cookies default
-on in production; `GAMEIONX_COOKIE_SECURE=0|1` can explicitly override that
-behavior. Set comma-separated `GAMEIONX_ALLOWED_ORIGINS` for a deployed
-frontend.
+## Future enhancements
 
-Authentication endpoints are `POST /api/auth/register`,
-`POST /api/auth/login`, `GET /api/auth/me`, and `POST /api/auth/logout`.
-Email-based requests are the current interface. The old username-shaped
-register/login requests remain accepted for API compatibility; those legacy
-accounts receive an internal `@legacy.gameionx.invalid` address and can
-continue signing in with their username.
+These are possible next steps, not current capabilities:
 
-New projects are stored through `POST/GET /api/projects` and
-`GET/PATCH/DELETE /api/projects/{id}`. Project rows reference the authenticated
-owner and preserve the original prompt, validated GameSpec, runtime
-configuration, GameDefinition, QA report, status, and timestamps as JSON or
-typed columns. Every read or mutation is scoped to the current session owner;
-the owner is never accepted from request data. Existing `/api/games` routes
-remain available for compatibility. Saved-game and activity endpoints also
-require authentication.
+- Persist version history and implement safe comparison and restoration.
+- Add backend-backed community publishing, sharing, and moderation.
+- Add generation telemetry and analytics endpoints.
+- Implement reference-file upload with validation and storage controls.
+- Expand browser gameplay coverage for more scenarios and runtime mechanics.
+- Add deployment-specific operational guidance, monitoring, and security review.
+- Select and add an explicit project license.
 
-Generation runs through `GameDesignerAgent`, `GameBuilderAgent`,
-`GameQAAgent`, `BrowserPlaytestRunner`, and a bounded `GameRepairAgent`
-coordinated by `GameOrchestrator`. The runner starts the local Vite frontend
-when it is not already available. Set `GAMEIONX_FRONTEND_URL` to use an
-existing frontend server at a different address. If Chrome or the frontend
-cannot be started, required checks remain NOT TESTED and the game cannot be
-marked ready. The preview supports keyboard movement, jumping, platform
-collisions, collectibles, enemy damage, collect/reach/time goals, level
-transitions, and restart with `R` after a win or loss.
+## Contributing
 
-GameSpec v1 now also includes backward-compatible genre fields (`game_type`,
-`camera`, `theme`, player movement settings, and a validated nine-color palette).
-The Phaser preview renders theme-specific vector backgrounds (forest, sky,
-space, road, maze, or neon), scenery and entity silhouettes from normalized
-GameSpec coordinates. Bird, forest exploration, space shooter, and racing
-prompts have capability-specific scene requirements in the designer prompt;
-the designer rejects and retries a mismatched genre or required mechanics
-instead of relabeling a generic game. Supported runtime genres are
-`platform_adventure`, `top_down_collection`, `maze`, `dodge_arena`,
-`collection_challenge`, `target_arcade`, `flappy_dodge`, `space_shooter`, and
-`racing`. Platform adventures use gravity and jumping; top-down and maze games
-use four-direction movement with walls or scenery; flappy games use gravity,
-flap input, scrolling obstacles, and scoring; space shooters use movement,
-firing, projectiles, enemy hazards, and health; racing uses road movement,
-obstacles, collisions, and a survival timer. The designer must select a type
-matching the prompt, and the controlled preview interprets the validated data
-without executing generated code. Structural QA remains separate from browser
-runtime verification.
+External contributions are welcome. Before proposing a change:
+
+1. Check existing issues and project behavior to avoid duplicating work.
+2. Keep changes focused and preserve the validated API and GameSpec contracts.
+3. Add or update tests for behavior changes; do not weaken existing assertions
+   to make a run pass.
+4. Run the relevant backend or frontend checks listed above and report any
+   checks that could not run.
+5. Do not include credentials, local `.env` files, SQLite databases, or
+   generated dependency/build/cache directories.
+6. Submit a pull request describing the change, validation performed, and any
+   limitations or follow-up work.
+
+## License
+
+No `LICENSE` file or license declaration is currently present in this
+repository. No license is asserted here. Ask the project owner to choose a
+license before redistributing or reusing the project; do not assume that the
+source is open-licensed.
